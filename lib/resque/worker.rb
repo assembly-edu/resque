@@ -293,6 +293,8 @@ module Resque
 
     # Processes a given job in the child.
     def perform(job)
+      log_with_severity :info, "Performing unforked job"
+
       begin
         if fork_per_job?
           reconnect
@@ -377,18 +379,48 @@ module Resque
     # USR2: Don't process any new jobs
     # CONT: Start processing jobs again after a USR2
     def register_signal_handlers
-      trap('TERM') { graceful_term ? shutdown : shutdown!  }
-      trap('INT')  { shutdown!  }
+      trap('TERM') do
+        if graceful_term
+          log_with_severity :warn, "Trapped TERM signal - terminating graceful, like"
+          shutdown
+        else
+          log_with_severity :warn, "Trapped TERM signal - terminating without grace, your Grace"
+          shutdown!
+        end
+      end
+
+      trap('INT') do
+        log_with_severity :warn, "Trapped INT signal - terminating without grace, your Grace"
+        shutdown!
+      end
 
       begin
-        trap('QUIT') { shutdown   }
-        if term_child
-          trap('USR1') { new_kill_child }
-        else
-          trap('USR1') { kill_child }
+        trap('QUIT') do
+          log_with_severity :warn, "Trapped QUIT signal - terminating without grace, your Grace"
+          shutdown
         end
-        trap('USR2') { pause_processing }
-        trap('CONT') { unpause_processing }
+
+        if term_child
+          trap('USR1') do
+            log_with_severity :warn, "Trapped USR1 signal - Killing a new child"
+            new_kill_child
+          end
+        else
+          trap('USR1') do
+            log_with_severity :warn, "Trapped USR1 signal - Killing a child"
+            kill_child
+          end
+        end
+
+        trap('USR2') do
+          log_with_severity :warn, "Trapped USR2 signal - pausing"
+          pause_processing
+        end
+
+        trap('CONT') do
+          log_with_severity :warn, "Trapped CONT signal - cracking on..."
+          unpause_processing
+        end
       rescue ArgumentError
         log_with_severity :warn, "Signals QUIT, USR1, USR2, and/or CONT not supported."
       end
@@ -398,7 +430,10 @@ module Resque
 
     def unregister_signal_handlers
       trap('TERM') do
+        log_with_severity :info, "Trapped a TERM signal"
+
         trap('TERM') do
+          log_with_severity :info, "Trapped a second TERM signal"
           # Ignore subsequent term signals
         end
 
@@ -883,6 +918,8 @@ module Resque
     private
 
     def perform_with_fork(job, &block)
+      log_with_severity :info, "Performing forked job"
+
       run_hook :before_fork, job
 
       begin
