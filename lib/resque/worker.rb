@@ -427,6 +427,8 @@ module Resque
     end
 
     def unregister_signal_handlers
+      log_with_severity :warn, "Un-registering signals for forked job"
+
       trap('TERM') do
         log_with_severity :warn, "Trapped TERM signal"
 
@@ -436,7 +438,10 @@ module Resque
         end
         raise TermException.new("SIGTERM")
       end
-      trap('INT', 'DEFAULT')
+      trap('INT') do
+        log_with_severity :warn, "Trapped INT signal"
+        'DEFAULT'
+      end
 
       begin
         trap('QUIT', 'DEFAULT')
@@ -547,6 +552,8 @@ module Resque
     # is processing will not be completed. Send the child a TERM signal,
     # wait 5 seconds, and then a KILL signal if it has not quit
     def new_kill_child
+      log_with_severity :warn, "Killing a new child: #{@child}"
+
       if @child
         unless Process.waitpid(@child, Process::WNOHANG)
           log_with_severity :debug, "Sending TERM signal to child #{@child}"
@@ -899,7 +906,10 @@ module Resque
       run_hook :before_fork, job
 
       begin
+        log_with_severity :warn, "About to fork"
+
         @child = fork do
+          log_with_severity :warn, "I'm forking so much, right now."
           unregister_signal_handlers if term_child
           perform(job, &block)
           exit! unless run_at_exit_hooks
